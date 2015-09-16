@@ -2,7 +2,9 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var bcrypt = require('bcrypt-nodejs');
+var passport = require('passport'); 
+var expressSession = require('express-session');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -21,17 +23,85 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
+app.use(expressSession({secret: 'secret'})); 
+//app.use(passport.initialize()); 
+//app.use(passport.session()); 
 
 
 app.get('/', 
 function(req, res) {
-  res.render('index');
+  if(req.session.isAuthenticated){
+    console.log("This is SESSION ID" + req.sessionID);
+    console.log("session ---");  
+    res.render('index');
+  }
+  else{
+    res.redirect('/login'); 
+  }
 });
 
 app.get('/create', 
 function(req, res) {
   res.render('index');
 });
+
+app.get('/signup', 
+function(req, res) {
+  res.render('signup');
+});
+
+app.post('/signup',
+  function(req, res) {
+    console.log(req.body); 
+    new User({ username: req.body.username}).fetch().then(function(found){
+      if(found) {
+        console.log("username already used"); 
+        //TODO: Send error message, user already exists
+        res.render('signup');
+      }
+      else{     
+        bcrypt.hash(req.body.password, null, null, function(err, encPassword){
+          var user = new User({
+            username: req.body.username,
+            password: encPassword
+          }); 
+          user.save().then(function() {
+            res.render('index');
+          });
+       });   
+      }
+    });
+  }); 
+
+app.post('/login',
+ function(req,res){
+  //query user, see if they exist
+  new User({username : req.body.username}).fetch().then(function(found){
+    if(found){
+    console.log(found);
+      bcrypt.compare(req.body.password, found.attributes.password, function(err,result){
+      if(result){
+          req.session.isAuthenticated = true; 
+          req.session.user = found.username;   
+          res.redirect('/');
+      }
+      else{
+        res.render('login', {message: '<div> Password is not correct</div>'});
+      }
+    });
+      
+    }
+  }); 
+});
+
+app.get('/login', 
+  function(req, res) {
+    if(!req.session.isAuthenticated) {
+        res.render('login');
+    } else {
+      res.redirect('/index');
+    }
+  }); 
 
 app.get('/links', 
 function(req, res) {
@@ -74,6 +144,11 @@ function(req, res) {
   });
 });
 
+app.get('/logout',
+  function(req, res) {
+    req.session.destroy();
+    res.redirect('/login');
+  });
 /************************************************************/
 // Write your authentication routes here
 /************************************************************/
@@ -110,3 +185,9 @@ app.get('/*', function(req, res) {
 
 console.log('Shortly is listening on 4568');
 app.listen(4568);
+
+
+//console.log(User);
+Users.fetch().then(function(users) {
+  //console.log(users.toJSON()); 
+});
